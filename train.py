@@ -175,23 +175,53 @@ def init_from_baseline(
     G_ema: EMA,
     device: str,
 ) -> None:
-    """Strict load of G / D / G_ema from a baseline ckpt.
+    """Load baseline weights.
 
-    Works out of the box when your architecture matches the baseline 256.
-
-    If you scale the architecture (add 512 / 1024 blocks, change channels,
-    swap the up-block design, etc.), this will raise — and that's intentional.
-    The transfer-learning recipe (which keys carry over, how to remap the
-    discriminator's reverse-ordered stage indices, what to do with the
-    last block's shape mismatch) is part of the assignment. Replace this
-    function or write your own loader before scaling.
+    Exact 256 configs are loaded strictly. Scaled configs reuse any matching
+    Generator tensors and leave newly added layers randomly initialized.
+    The Discriminator is loaded only for exact architecture matches because
+    adding a higher-resolution input block shifts the stage ordering.
     """
+    def is_exact_match(module: torch.nn.Module, source: dict) -> bool:
+        target = module.state_dict()
+        return (
+            len(target) == len(source)
+            and all(k in source and source[k].shape == v.shape for k, v in target.items())
+        )
+
+    def load_matching(module: torch.nn.Module, source: dict, label: str) -> None:
+        target = module.state_dict()
+        matched = {
+            k: v
+            for k, v in source.items()
+            if k in target and target[k].shape == v.shape
+        }
+        target.update(matched)
+        module.load_state_dict(target)
+        skipped = len(source) - len(matched)
+        print(f"  Loaded {label}: {len(matched)} tensors matched, {skipped} skipped")
+
     print(f"Initializing from baseline: {init_path}")
     ckpt = torch.load(init_path, map_location=device, weights_only=True)
-    G.load_state_dict(ckpt["G_state"])
-    D.load_state_dict(ckpt["D_state"])
-    G_ema.load_state_dict(ckpt["G_ema_state"])
-    print("  Loaded G, D, G_ema (strict)")
+
+    g_state = ckpt["G_state"]
+    g_ema_state = ckpt.get("G_ema_state", g_state)
+    d_state = ckpt["D_state"]
+
+    if is_exact_match(G, g_state):
+        G.load_state_dict(g_state)
+        G_ema.load_state_dict(g_ema_state)
+        D.load_state_dict(d_state)
+        print("  Loaded G, D, G_ema (strict)")
+        return
+
+    load_matching(G, g_state, "G partial")
+    load_matching(G_ema.shadow, g_ema_state, "G_ema partial")
+    if is_exact_match(D, d_state):
+        D.load_state_dict(d_state)
+        print("  Loaded D (strict)")
+    else:
+        print("  D architecture changed; starting D from random initialization")
 
 
 def main() -> None:
