@@ -202,7 +202,10 @@ def init_from_baseline(
         print(f"  Loaded {label}: {len(matched)} tensors matched, {skipped} skipped")
 
     print(f"Initializing from baseline: {init_path}")
-    ckpt = torch.load(init_path, map_location=device, weights_only=True)
+    # Full training checkpoints include optimizer/RNG metadata that PyTorch's
+    # weights_only loader rejects on recent versions. --init-from is an explicit
+    # user-provided trusted local checkpoint path, so load the full dict here.
+    ckpt = torch.load(init_path, map_location=device, weights_only=False)
 
     g_state = ckpt["G_state"]
     g_ema_state = ckpt.get("G_ema_state", g_state)

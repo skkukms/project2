@@ -79,6 +79,8 @@ Checkpoint loading change
 - Scaled configs now partially load matching Generator tensors from the 256 baseline.
 - Newly added layers, such as the 512 block, remain randomly initialized.
 - Discriminator starts from random initialization when the architecture changes.
+- Changed --init-from loading to weights_only=False so full training checkpoints
+  such as runs/.../final.pt can be used as initialization on PyTorch 2.6+.
 
 Next actions
 ------------
