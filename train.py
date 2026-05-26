@@ -27,6 +27,7 @@ FID is intentionally not measured here — measure it yourself between checkpoin
 from __future__ import annotations
 
 import argparse
+import os
 import threading
 import time
 from dataclasses import asdict
@@ -69,6 +70,45 @@ def set_seed(seed: int) -> None:
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
+
+
+def setup_wandb(wandb_cfg: dict, run_id: str | None, cfg: dict):
+    """Initialize WandB, logging in from an env var or Colab prompt if needed."""
+    if not _HAS_WANDB:
+        print("wandb is not installed; logging is disabled.")
+        return None, "disabled", None
+
+    wandb_mode = wandb_cfg.get("mode", "online")
+    if wandb_mode == "disabled":
+        return None, "disabled", None
+
+    if wandb_cfg.get("login", True) and wandb_mode == "online":
+        api_key_env = wandb_cfg.get("api_key_env", "WANDB_API_KEY")
+        api_key = os.environ.get(api_key_env)
+        if api_key:
+            wandb.login(key=api_key, relogin=False)
+            print(f"wandb login: using ${api_key_env}")
+        else:
+            print(
+                "wandb login: no API key env var found. "
+                "If Colab prompts, paste your key from https://wandb.ai/authorize"
+            )
+            wandb.login()
+
+    init_kwargs = {
+        "project": wandb_cfg.get("project", "ffhqgen-student"),
+        "name": wandb_cfg.get("name"),
+        "mode": wandb_mode,
+        "config": cfg,
+    }
+    if wandb_cfg.get("entity"):
+        init_kwargs["entity"] = wandb_cfg["entity"]
+    if run_id is not None:
+        init_kwargs["id"] = run_id
+        init_kwargs["resume"] = "must"
+
+    run = wandb.init(**init_kwargs)
+    return run, wandb_mode, run.id
 
 
 def save_checkpoint(path: Path, state: dict) -> None:
@@ -269,20 +309,7 @@ def main() -> None:
 
     # wandb
     wandb_cfg = cfg.get("wandb", {})
-    wandb_mode = wandb_cfg.get("mode", "online") if _HAS_WANDB else "disabled"
-    run = None
-    if wandb_mode != "disabled":
-        init_kwargs = {
-            "project": wandb_cfg.get("project", "ffhqgen-student"),
-            "name": wandb_cfg.get("name"),
-            "mode": wandb_mode,
-            "config": cfg,
-        }
-        if wandb_run_id is not None:
-            init_kwargs["id"] = wandb_run_id
-            init_kwargs["resume"] = "must"
-        run = wandb.init(**init_kwargs)
-        wandb_run_id = run.id
+    run, wandb_mode, wandb_run_id = setup_wandb(wandb_cfg, wandb_run_id, cfg)
 
     total_images = train_cfg["total_images"]
     z_dim = g_cfg.z_dim

@@ -65,6 +65,9 @@ wandb:
   project: ffhqgen-student
   name: my_run
   mode: online                            # online | offline | disabled
+  login: true
+  api_key_env: WANDB_API_KEY              # set this in Colab secrets/env for non-interactive login
+  entity: null                            # optional: your wandb username/team
 
 out:
   run_dir: runs/my_run
