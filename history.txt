@@ -1,0 +1,94 @@
+Project 2 experiment history
+============================
+
+2026-05-26
+
+Initial setup
+-------------
+- Unpacked the provided student baseline package.
+- Kept code in GitHub and excluded large artifacts from Git:
+  - ckpt/
+  - *.pt, *.pth, *.onnx
+  - *.zip
+  - runs/, wandb/, data/
+- Baseline checkpoint and dataset zips are stored in Google Drive instead.
+
+Baseline model
+--------------
+- Generator:
+  - z_dim: 512
+  - native output: 256x256 RGB
+  - ResNet upsampling stack: 4 -> 8 -> 16 -> 32 -> 64 -> 128 -> 256
+  - channels: 512, 512, 512, 512, 256, 128, 64
+  - GroupNorm
+  - self-attention at 32x32
+- Discriminator:
+  - ResNet downsampling stack from 256 to 4
+  - SpectralNorm
+  - MinibatchStd
+  - self-attention at 32x32
+- Loss:
+  - non-saturating logistic GAN loss
+  - R1 regularization
+- EMA generator is used for sampling.
+
+Colab / WandB setup
+-------------------
+- Added explicit WandB login setup in train.py.
+- train.py now reads WANDB_API_KEY by default.
+- If WANDB_API_KEY is not present, wandb.login() prompts for an API key.
+- baseline_256.yaml now includes:
+  - wandb.login
+  - wandb.api_key_env
+  - wandb.entity
+
+256 smoke test
+--------------
+- Ran 256 baseline fine-tuning on Colab using:
+  - init checkpoint: /content/drive/MyDrive/project2/ckpt/ffhq256_baseline.pt
+  - train zip: /content/drive/MyDrive/project2/train_50k_256.zip
+- Original batch_size 64 caused CUDA OOM during R1 backward.
+- Reduced batch size for Colab.
+- A successful run produced normal WandB loss curves and a sample grid.
+- Sample quality looked reasonable for a 256 baseline:
+  - stable face structure
+  - no obvious mode collapse
+  - some expected 256-level artifacts around eyes, hair, and background
+
+512 expansion plan
+------------------
+- Added configs/finetune_512_colab.yaml.
+- Extended Generator from 256 native output to 512 native output:
+  - resolutions: 4, 8, 16, 32, 64, 128, 256, 512
+  - added 512 channel width: 64
+- Extended Discriminator to start from 512:
+  - resolutions: 512, 256, 128, 64, 32, 16, 8, 4
+  - channels at 512: 64
+- Training settings for 512:
+  - batch_size: 8
+  - lr_g: 0.0002
+  - lr_d: 0.0002
+  - r1_lazy_every: 64
+  - sample_n: 16
+  - ckpt_every: 50_000 images
+
+Checkpoint loading change
+-------------------------
+- Updated init_from_baseline() in train.py.
+- Exact 256 configs still load G, D, and G_ema strictly.
+- Scaled configs now partially load matching Generator tensors from the 256 baseline.
+- Newly added layers, such as the 512 block, remain randomly initialized.
+- Discriminator starts from random initialization when the architecture changes.
+
+Next actions
+------------
+- Upload train_50k_512.zip to:
+  /content/drive/MyDrive/project2/train_50k_512.zip
+- In Colab, run:
+  git pull
+- Smoke test 512:
+  python train.py \
+    --config configs/finetune_512_colab.yaml \
+    --init-from /content/drive/MyDrive/project2/ckpt/ffhq256_baseline.pt \
+    --total-images 50000
+- If stable, train longer without --total-images.
