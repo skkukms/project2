@@ -227,6 +227,50 @@ def init_from_baseline(
         print("  D architecture changed; starting D from random initialization")
 
 
+def configure_g_freeze(G: Generator, train_cfg: dict) -> None:
+    """Optionally freeze old Generator blocks during progressive upscaling."""
+    if not train_cfg.get("freeze_g_backbone", False):
+        return
+
+    trainable_resolutions = {
+        int(r) for r in train_cfg.get("trainable_g_resolutions", [])
+    }
+    if not trainable_resolutions:
+        raise ValueError(
+            "freeze_g_backbone=true requires trainable_g_resolutions, "
+            "for example [512]."
+        )
+
+    for p in G.parameters():
+        p.requires_grad_(False)
+
+    stage_idx = 0
+    for res_out in G.cfg.resolutions[1:]:
+        block = G.stages[stage_idx]
+        stage_idx += 1
+        modules = [block]
+        if res_out in G.cfg.attention_resolutions:
+            modules.append(G.stages[stage_idx])
+            stage_idx += 1
+        if res_out in trainable_resolutions:
+            for module in modules:
+                for p in module.parameters():
+                    p.requires_grad_(True)
+
+    # The final RGB head changes when the native output resolution changes.
+    for module in (G.out_norm, G.to_rgb):
+        for p in module.parameters():
+            p.requires_grad_(True)
+
+    trainable = sum(p.numel() for p in G.parameters() if p.requires_grad)
+    total = sum(p.numel() for p in G.parameters())
+    print(
+        "Generator freeze: backbone frozen; trainable resolutions="
+        f"{sorted(trainable_resolutions)}, trainable={trainable/1e6:.2f}M/"
+        f"{total/1e6:.2f}M params"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, type=Path)
@@ -339,6 +383,8 @@ def main() -> None:
             torch.cuda.set_rng_state_all([s.cpu() for s in rng["cuda"]])
         if rng.get("numpy") is not None:
             np.random.set_state(rng["numpy"])
+
+    configure_g_freeze(G, train_cfg)
 
     # wandb
     wandb_cfg = cfg.get("wandb", {})

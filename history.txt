@@ -94,3 +94,31 @@ Next actions
     --init-from /content/drive/MyDrive/project2/ckpt/ffhq256_baseline.pt \
     --total-images 50000
 - If stable, train longer without --total-images.
+
+512 freeze experiment
+---------------------
+- Previous 512 tests from the 256 fine-tuned checkpoint produced worse samples:
+  color bleeding, texture artifacts, and distorted faces.
+- A second 512 test from the original baseline checkpoint still showed weak
+  learning signals:
+  - D outputs stayed near 0
+  - G/D losses stayed close to log(2)
+  - gradient norms were very small
+- Added freeze_g_backbone support in train.py.
+- Added configs/finetune_512_freeze_colab.yaml.
+- Freeze strategy:
+  - load original ffhq256_baseline.pt
+  - freeze Generator input projection and 4->256 blocks
+  - train only the 512 Generator block plus out_norm/to_rgb
+  - train the full Discriminator
+- Initial freeze config:
+  - lr_g: 0.0002
+  - lr_d: 0.0005
+  - r1_lazy_every: 128
+  - ckpt_every: 10_000
+  - total_images: 300_000
+- Smoke test command:
+  python train.py \
+    --config configs/finetune_512_freeze_colab.yaml \
+    --init-from /content/drive/MyDrive/project2/ckpt/ffhq256_baseline.pt \
+    --total-images 50000
