@@ -49,14 +49,11 @@ class GeneratorConfig:
     norm_type: str = "gn"  # 'gn' or 'in'
     gn_groups: int = 32
     attention_resolutions: list[int] = field(default_factory=list)
-    final_channels: int | None = None
 
     def __post_init__(self) -> None:
         self.resolutions = [int(r) for r in self.resolutions]
         self.channels = _normalize_channels(self.channels)
         self.attention_resolutions = [int(r) for r in self.attention_resolutions]
-        if self.final_channels is not None:
-            self.final_channels = int(self.final_channels)
         for r in self.resolutions:
             if r not in self.channels:
                 raise ValueError(f"channels missing entry for resolution {r}")
@@ -238,19 +235,12 @@ class Generator(nn.Module):
         self.stages = nn.Sequential(*stages)
 
         last_ch = cfg.channels[cfg.resolutions[-1]]
-        final_ch = cfg.final_channels or last_ch
-        self.final_adapter = (
-            nn.Conv2d(last_ch, final_ch, kernel_size=1)
-            if final_ch != last_ch
-            else nn.Identity()
-        )
-        self.out_norm = make_norm(final_ch, cfg.norm_type, cfg.gn_groups)
-        self.to_rgb = nn.Conv2d(final_ch, 3, kernel_size=3, padding=1)
+        self.out_norm = make_norm(last_ch, cfg.norm_type, cfg.gn_groups)
+        self.to_rgb = nn.Conv2d(last_ch, 3, kernel_size=3, padding=1)
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         h = self.input_proj(z).view(-1, self.first_ch, self.first_res, self.first_res)
         h = self.stages(h)
-        h = self.final_adapter(h)
         h = F.relu(self.out_norm(h))
         return torch.tanh(self.to_rgb(h))
 

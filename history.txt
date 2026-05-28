@@ -158,6 +158,8 @@ Next actions
   the random 128->64 adapter changed the feature distribution expected by the
   pretrained RGB head, producing even stronger color artifacts.
 - Decision: abandon wide 512 for now.
+- Removed the failed wide config and reverted the final_adapter/final_channels
+  code path to keep the main model simple.
 - Return to narrow 512 channels:
   - Generator 512 channels: 64
   - trainable_g_resolutions: [512]
