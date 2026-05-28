@@ -152,3 +152,14 @@ Next actions
     --config configs/finetune_512_wide_freeze_colab.yaml \
     --init-from /content/drive/MyDrive/project2/ckpt/ffhq256_baseline.pt \
     --total-images 50000
+- Result: failed. The first wide run without final_channels caused severe
+  green/purple color collapse because to_rgb was randomly initialized.
+- A second wide run with final_adapter and final_channels=64 still failed:
+  the random 128->64 adapter changed the feature distribution expected by the
+  pretrained RGB head, producing even stronger color artifacts.
+- Decision: abandon wide 512 for now.
+- Return to narrow 512 channels:
+  - Generator 512 channels: 64
+  - trainable_g_resolutions: [512]
+  - regenerate ckpt_000010000.pt from baseline
+  - then try partial unfreeze [256, 512] with low G lr
