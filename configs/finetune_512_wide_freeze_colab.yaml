@@ -13,6 +13,7 @@ generator:
   norm_type: gn
   gn_groups: 32
   attention_resolutions: [32]
+  final_channels: 64
 
 discriminator:
   resolutions: [512, 256, 128, 64, 32, 16, 8, 4]
@@ -40,7 +41,7 @@ training:
   precision: fp32
   augment: color,translation
 
-  # Wider high-resolution block; keep the pretrained 4->256 backbone stable.
+  # Wider high-resolution block; keep pretrained 4->256 and RGB head stable.
   freeze_g_backbone: true
   trainable_g_resolutions: [512]
 

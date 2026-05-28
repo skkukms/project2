@@ -135,10 +135,18 @@ Next actions
 - Changes from the narrow freeze config:
   - Generator 512 channels: 64 -> 128
   - Discriminator 512 channels: 64 -> 128
+  - final_channels: 64
   - freeze_g_backbone: true
   - trainable_g_resolutions: [512]
   - lr_g: 0.0001
   - lr_d: 0.0005
+- The first wide attempt without final_channels failed because changing
+  512 channels from 64 to 128 also changed the RGB head shape. That forced
+  to_rgb to random initialization and caused severe color collapse.
+- Added Generator final_adapter support:
+  - high-resolution block can output 128 channels
+  - 1x1 final_adapter maps 128 -> 64
+  - baseline out_norm and to_rgb can still be partially loaded
 - Smoke test command:
   python train.py \
     --config configs/finetune_512_wide_freeze_colab.yaml \

@@ -257,8 +257,8 @@ def configure_g_freeze(G: Generator, train_cfg: dict) -> None:
                 for p in module.parameters():
                     p.requires_grad_(True)
 
-    # The final RGB head changes when the native output resolution changes.
-    for module in (G.out_norm, G.to_rgb):
+    # The final adapter/RGB head handles new high-resolution features.
+    for module in (G.final_adapter, G.out_norm, G.to_rgb):
         for p in module.parameters():
             p.requires_grad_(True)
 
