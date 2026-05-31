@@ -49,14 +49,21 @@ class GeneratorConfig:
     norm_type: str = "gn"  # 'gn' or 'in'
     gn_groups: int = 32
     attention_resolutions: list[int] = field(default_factory=list)
+    residual_rgb_resolutions: list[int] = field(default_factory=list)
+    residual_rgb_scale: float = 0.1
 
     def __post_init__(self) -> None:
         self.resolutions = [int(r) for r in self.resolutions]
         self.channels = _normalize_channels(self.channels)
         self.attention_resolutions = [int(r) for r in self.attention_resolutions]
+        self.residual_rgb_resolutions = [int(r) for r in self.residual_rgb_resolutions]
+        self.residual_rgb_scale = float(self.residual_rgb_scale)
         for r in self.resolutions:
             if r not in self.channels:
                 raise ValueError(f"channels missing entry for resolution {r}")
+        for r in self.residual_rgb_resolutions:
+            if r not in self.resolutions[1:]:
+                raise ValueError(f"residual RGB resolution must be an added stage, got {r}")
         if self.norm_type not in ("gn", "in"):
             raise ValueError(f"norm_type must be 'gn' or 'in', got {self.norm_type!r}")
 
@@ -234,15 +241,58 @@ class Generator(nn.Module):
                 stages.append(SelfAttention2d(out_ch, use_spectral_norm=False))
         self.stages = nn.Sequential(*stages)
 
-        last_ch = cfg.channels[cfg.resolutions[-1]]
-        self.out_norm = make_norm(last_ch, cfg.norm_type, cfg.gn_groups)
-        self.to_rgb = nn.Conv2d(last_ch, 3, kernel_size=3, padding=1)
+        self.residual_rgb_resolutions = set(cfg.residual_rgb_resolutions)
+        if self.residual_rgb_resolutions:
+            first_residual_idx = min(
+                cfg.resolutions.index(r) for r in self.residual_rgb_resolutions
+            )
+            self.base_rgb_resolution = cfg.resolutions[first_residual_idx - 1]
+        else:
+            self.base_rgb_resolution = cfg.resolutions[-1]
+
+        base_ch = cfg.channels[self.base_rgb_resolution]
+        self.out_norm = make_norm(base_ch, cfg.norm_type, cfg.gn_groups)
+        self.to_rgb = nn.Conv2d(base_ch, 3, kernel_size=3, padding=1)
+
+        self.residual_norms = nn.ModuleDict()
+        self.residual_to_rgbs = nn.ModuleDict()
+        for res in cfg.residual_rgb_resolutions:
+            key = str(res)
+            channels = cfg.channels[res]
+            self.residual_norms[key] = make_norm(channels, cfg.norm_type, cfg.gn_groups)
+            self.residual_to_rgbs[key] = nn.Conv2d(channels, 3, kernel_size=3, padding=1)
+            nn.init.zeros_(self.residual_to_rgbs[key].weight)
+            nn.init.zeros_(self.residual_to_rgbs[key].bias)
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         h = self.input_proj(z).view(-1, self.first_ch, self.first_res, self.first_res)
-        h = self.stages(h)
-        h = F.relu(self.out_norm(h))
-        return torch.tanh(self.to_rgb(h))
+        image = None
+        if self.first_res == self.base_rgb_resolution:
+            image = torch.tanh(self.to_rgb(F.relu(self.out_norm(h))))
+
+        stage_idx = 0
+        for res_out in self.cfg.resolutions[1:]:
+            h = self.stages[stage_idx](h)
+            stage_idx += 1
+            if res_out in self.cfg.attention_resolutions:
+                h = self.stages[stage_idx](h)
+                stage_idx += 1
+
+            if res_out == self.base_rgb_resolution:
+                image = torch.tanh(self.to_rgb(F.relu(self.out_norm(h))))
+            elif res_out in self.residual_rgb_resolutions:
+                if image is None:
+                    raise RuntimeError("Residual RGB stage has no lower-resolution image")
+                image = F.interpolate(
+                    image, size=(res_out, res_out), mode="bilinear", align_corners=False
+                )
+                key = str(res_out)
+                residual = self.residual_to_rgbs[key](F.relu(self.residual_norms[key](h)))
+                image = (image + self.cfg.residual_rgb_scale * residual).clamp(-1.0, 1.0)
+
+        if image is None:
+            raise RuntimeError("Generator did not produce an RGB image")
+        return image
 
 
 class Discriminator(nn.Module):

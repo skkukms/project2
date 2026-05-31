@@ -257,10 +257,17 @@ def configure_g_freeze(G: Generator, train_cfg: dict) -> None:
                 for p in module.parameters():
                     p.requires_grad_(True)
 
-    # The final RGB head changes when the native output resolution changes.
-    for module in (G.out_norm, G.to_rgb):
-        for p in module.parameters():
-            p.requires_grad_(True)
+    if G.residual_rgb_resolutions:
+        for res in trainable_resolutions & G.residual_rgb_resolutions:
+            key = str(res)
+            for module in (G.residual_norms[key], G.residual_to_rgbs[key]):
+                for p in module.parameters():
+                    p.requires_grad_(True)
+    else:
+        # The final RGB head changes when the native output resolution changes.
+        for module in (G.out_norm, G.to_rgb):
+            for p in module.parameters():
+                p.requires_grad_(True)
 
     trainable = sum(p.numel() for p in G.parameters() if p.requires_grad)
     total = sum(p.numel() for p in G.parameters())

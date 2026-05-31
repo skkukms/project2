@@ -189,3 +189,30 @@ Next actions
     --config configs/finetune_512_partial_unfreeze_colab.yaml \
     --init-from /content/drive/MyDrive/project2/runs/finetune_512_freeze_colab/ckpt_000010000.pt \
     --total-images 50000
+
+512 residual progressive experiment
+-----------------------------------
+- Narrow freeze and partial-unfreeze runs still accumulated color tint and
+  stripe artifacts. The main issue is that a newly initialized high-resolution
+  block immediately replaces the RGB output path.
+- Added an optional residual progressive RGB path in src/model.py.
+- The original baseline RGB head remains the base image path:
+  - render the pretrained 256 RGB image
+  - bilinear upsample it to 512
+  - add a small learned 512 residual refinement
+- The new residual RGB convolution is zero initialized, so the initial output
+  matches the upsampled baseline instead of replacing it with random colors.
+- Added configs/finetune_512_residual_colab.yaml:
+  - Generator 512 channels: 128
+  - residual_rgb_resolutions: [512]
+  - residual_rgb_scale: 0.1
+  - freeze_g_backbone: true
+  - trainable_g_resolutions: [512]
+  - lr_g: 0.0001
+  - lr_d: 0.0003
+  - ckpt_every: 10_000
+- Smoke test command:
+  python train.py \
+    --config configs/finetune_512_residual_colab.yaml \
+    --init-from /content/drive/MyDrive/project2/ckpt/ffhq256_baseline.pt \
+    --total-images 50000
