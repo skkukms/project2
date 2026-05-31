@@ -165,3 +165,27 @@ Next actions
   - trainable_g_resolutions: [512]
   - regenerate ckpt_000010000.pt from baseline
   - then try partial unfreeze [256, 512] with low G lr
+
+512 partial unfreeze experiment
+-------------------------------
+- Re-ran narrow 512 freeze from baseline.
+- Samples degraded after 10k images, so selected:
+  runs/finetune_512_freeze_colab/ckpt_000010000.pt
+- Added configs/finetune_512_partial_unfreeze_colab.yaml.
+- Strategy:
+  - keep 4->128 Generator backbone frozen
+  - train 128->256 and 256->512 Generator blocks
+  - train out_norm and to_rgb
+  - initialize from the narrow 10k checkpoint
+- Initial settings:
+  - trainable_g_resolutions: [256, 512]
+  - lr_g: 0.00005
+  - lr_d: 0.0003
+  - r1_lazy_every: 128
+  - ckpt_every: 10_000
+  - total_images: 100_000
+- Smoke test command:
+  python train.py \
+    --config configs/finetune_512_partial_unfreeze_colab.yaml \
+    --init-from /content/drive/MyDrive/project2/runs/finetune_512_freeze_colab/ckpt_000010000.pt \
+    --total-images 50000
